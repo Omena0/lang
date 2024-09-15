@@ -57,11 +57,11 @@ def calc(left: str, oper: str, right: str, vars: dict):
         case _:
             return right
 
-def evalExpr(expr: str, vars, r=False):
+def evalExpr(expr: str, vars, calledFromSelf=False):
     left = ''
     right = ''
     oper = ''
-    parseRight = False
+    seenOperator = False
     jumpToNext = 0
     jumps = 1
 
@@ -69,7 +69,7 @@ def evalExpr(expr: str, vars, r=False):
         if jumpToNext:
             if chr == ')':
                 jumpToNext -= 1
-                parseRight = False
+                seenOperator = False
             continue
 
         if chr in operators:
@@ -79,19 +79,19 @@ def evalExpr(expr: str, vars, r=False):
                 )
 
             oper = chr
-            parseRight = True
+            seenOperator = True
 
         elif chr == '(':
-            if parseRight:
-                j, right = evalExpr(expr[i+1:], vars, r=True)
+            if seenOperator:
+                j, right = evalExpr(expr[i+1:], vars, calledFromSelf=True)
             else:
-                j, left = evalExpr(expr[i+1:], vars, r=True)
+                j, left = evalExpr(expr[i+1:], vars, calledFromSelf=True)
 
             jumpToNext += j
             jumps += 1
 
         elif chr == ')':
-            if r:
+            if calledFromSelf:
                 return jumps, calc(left, oper, right, vars)
             return calc(left, oper, right, vars)
 
@@ -99,14 +99,14 @@ def evalExpr(expr: str, vars, r=False):
             continue
 
         else:
-            if parseRight:
+            if seenOperator:
                 right = str(right)
                 right += chr
             else:
                 left = str(left)
                 left += chr
 
-    if r:
+    if calledFromSelf:
         return 0, calc(left, oper, right, vars)
 
     return calc(left, oper, right, vars)
