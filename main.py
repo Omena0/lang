@@ -14,67 +14,48 @@ def prepareSource(src: str):
 
     return fixed.replace('(', ' ( ').replace(')', ' ) ').replace('  ', ' ')
 
-
 def calc(left: str, oper: str, right: str, vars: dict):
+    # sourcery skip: remove-unnecessary-cast
     left = str(left)
     right = str(right)
 
     if not oper:
         if not left:
-            if not right:
+            if right:
+                return right
+            else:
                 raise ValueError('No expression provided')
-            return right
         if not right:
-            if not left:
-                raise ValueError('No expression provided')
             return left
 
     if not left.replace('.', '', 1).isnumeric():
-        if left in vars:
-            left = str(vars[left]).strip()
-            if left.startswith('(') and left.endswith(')'):
-                left = evalExpr(left, vars)
-        else:
+        if left not in vars:
             raise UnboundLocalError(f'Variable {left} is not defined')
 
+        left = str(vars[left]).strip()
+        if left.startswith('(') and left.endswith(')'):
+            left = evalExpr(left, vars)
     if not right.replace('.', '', 1).isnumeric():
-        if right in vars:
-            right = str(vars[right]).strip()
-            if right.startswith('(') and right.endswith(')'):
-                right = evalExpr(right, vars)
-
-        else:
+        if right not in vars:
             raise UnboundLocalError(f'Variable {right} is not defined')
+
+        right = str(vars[right]).strip()
+        if right.startswith('(') and right.endswith(')'):
+            right = evalExpr(right, vars)
 
     match oper:
         case '+':
-            if right:
-                return float(left) + float(right)
-            return left
-
+            return float(left) + float(right) if right else left
         case '-':
-            if right:
-                return float(left) - float(right)
-            return left
-
+            return float(left) - float(right) if right else left
         case '*':
-            if right:
-                return float(left) * float(right)
-            return left
-
+            return float(left) * float(right) if right else left
         case '/':
-            if right:
-                return float(left) / float(right)
-            return left
-
+            return float(left) / float(right) if right else left
         case '^':
-            if right:
-                return float(left) ** float(right)
-            return left
-
+            return float(left) ** float(right) if right else left
         case _:
             return right
-
 
 def evalExpr(expr: str, vars, r=False):
     left = ''
@@ -131,10 +112,9 @@ def evalExpr(expr: str, vars, r=False):
 
     return calc(left, oper, right, vars)
 
-
 func = {}
 
-def parseScope(src: str, rDepth=0):
+def parseScope(src: str, rDepth=0):  # sourcery skip: low-code-quality
     locals = {}
     skip = 0
     code = []
@@ -148,7 +128,7 @@ def parseScope(src: str, rDepth=0):
         if not line.strip():
             continue
 
-        name, *args = shlex.split(line.replace(',', ' ').strip())
+        name, *args = shlex.split(line.replace(',', ' ').strip(),posix=False)
 
         if name == 'fn':
             fname = args[0]
@@ -216,13 +196,45 @@ def parseScope(src: str, rDepth=0):
     if not rDepth and 'main' not in src:
         func['main'] = ([], code, locals)
 
-    if rDepth:
-        return index, locals
+    return (index, locals) if rDepth else func
 
-    return func
+def parseArgs(line, runFunc, func, stdlib, vars):
+    args = line[1] if isinstance(line[1], list) else line[1].split(',')
 
+    result = []
+    for value in args:
+        value = value.strip()
 
-def runFunc(func, name, args):
+        if value.startswith('"') or value.replace('.', '', 1).isnumeric():
+            v = line[1] if isinstance(line[1], str) else ' '.join(line[1])
+            v = v.strip('"')
+
+        elif value in vars:
+            v = vars[value]
+
+        elif value in stdlib:
+            v = stdlib[value](*args[1:])
+            result.append(v.strip('"'))
+            break
+
+        elif value in func:
+            v = runFunc(func, value, line[1][1:])
+            break
+
+        else:
+            raise UnboundLocalError(f'Variable {value} is not defined.')
+
+        try:
+            v = int(v)
+
+        except ValueError:
+            pass
+
+        result.append(v.strip('"'))
+
+    return result
+
+def runFunc(func, name, args):  # sourcery skip: low-code-quality
     if name not in func:
         raise NameError(f'Function {name} is not defined')
 
@@ -230,7 +242,7 @@ def runFunc(func, name, args):
         print(f'Running function {name} with args {args}')
 
     argNames, code, vars = func[name]
-    vars.update({k: v for k, v in zip(argNames, args)})
+    vars.update(dict(zip(argNames, args)))
 
     skip = 0
     for index, line in enumerate(code):
@@ -247,10 +259,11 @@ def runFunc(func, name, args):
             print(f'Fname: {fname}')
 
         if fname == 'ret':
-            if isinstance(line[1], list):
-                ret = evalExpr(' '.join(line[1]), vars)
-            else:
-                ret = evalExpr(' '.join(line[1:]), vars)
+            ret = (
+                evalExpr(' '.join(line[1]), vars)
+                if isinstance(line[1], list)
+                else evalExpr(' '.join(line[1:]), vars)
+            )
             if debug:
                 print(f'Returning {ret}')
             return ret
@@ -265,7 +278,8 @@ def runFunc(func, name, args):
             for line in code[index-1:]:
                 if line[-1].endswith('}'):
                     break
-                skip += 1
+                else:
+                    skip += 1
 
         elif fname == 'import':
             if debug:
@@ -273,31 +287,29 @@ def runFunc(func, name, args):
             with open(line[1][0]) as f:
                 parseScope(prepareSource(f.read()))
 
+        elif fname in stdlib:
+            if debug:
+                print(f'Using stdlib function {fname}')
+            
+            args = parseArgs(line, runFunc, func, stdlib, vars)
+            stdlib[fname](*args)
+
+        elif fname in func:
+            runFunc(func, fname, args)
+
         else:
-            if fname in stdlib:
-                if debug:
-                    print(f'Using stdlib function {fname}')
-                stdlib[fname](line, runFunc, func, vars)
-
-            else:
-                if fname in func:
-                    runFunc(func, fname, args)
-
-                else:
-                    raise NameError(f'Function {fname} is not defined')
-
+            raise NameError(f'Function {fname} is not defined')
 
 stdlib = {}
-
-
 def load_stdlib(path: str = 'stdlib'):
     for file in os.listdir(path):
         if not file.endswith('.py'):
             continue
         if not os.path.isfile(os.path.join(path, file)):
             continue
-        m = getattr(__import__(
-            f'{path}.{file.split('.')[0]}'), file.split('.')[0])
+
+        m = getattr(__import__(f'{path}.{file.split('.')[0]}'), file.split('.')[0])
+
         for attr in dir(m):
             if not attr.startswith('std'):
                 continue
