@@ -230,7 +230,7 @@ def parseArgs(line, runFunc, func, stdlib, vars):
         except ValueError:
             pass
 
-        result.append(v.strip('"'))
+        result.append(str(v).strip('"'))
 
     return result
 
