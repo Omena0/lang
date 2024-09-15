@@ -308,14 +308,15 @@ def load_stdlib(path: str = 'stdlib'):
         if not os.path.isfile(os.path.join(path, file)):
             continue
 
-        m = getattr(__import__(f'{path}.{file.split('.')[0]}'), file.split('.')[0])
+        fname = file.split('.')[0]
+        module = getattr(__import__(f'{path}.{fname}'), fname)
 
-        for attr in dir(m):
+        for attr in dir(module):
             if not attr.startswith('std'):
                 continue
-            if not callable(getattr(m, attr)):
+            if not callable(getattr(module, attr)):
                 continue
-            stdlib[attr.removeprefix('std_')] = getattr(m, attr)
+            stdlib[attr.removeprefix('std_')] = getattr(module, attr)
 
 
 ### RUN THE THING ###
