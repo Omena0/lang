@@ -75,8 +75,7 @@ def evalExpr(expr: str, vars, r=False):
         if chr in operators:
             if oper:
                 raise SyntaxError(
-                    f'Operator ({chr}) is already set (to {
-                        oper}) at "{expr}" [{i}]'
+                    f'Operator ({chr}) is already set (to {oper}) at "{expr}" [{i}]'
                 )
 
             oper = chr
@@ -135,11 +134,11 @@ def parseScope(src: str, rDepth=0):  # sourcery skip: low-code-quality
             fargs = []
             i = 1
             while '{' not in args[i]:
-                a = args[i].replace('(', '').replace(
-                    ')', '').strip().removesuffix(',').strip()
+                cleanedArg = args[i].replace('(', '').replace(')', '').strip().removesuffix(',').strip()
 
-                if a:
-                    fargs.append(a)
+                if cleanedArg:
+                    fargs.append(cleanedArg)
+
                 i += 1
 
             c = ''.join(src.splitlines()[index+1:]).count('{')+1
