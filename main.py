@@ -141,15 +141,15 @@ def parseScope(src: str, rDepth=0):  # sourcery skip: low-code-quality
 
                 i += 1
 
-            c = ''.join(src.splitlines()[index+1:]).count('{')+1
-            s = ''.join('\n'.join(src.splitlines()[index+1:]).replace('}','}|').split('|')[:c])
+            count = ''.join(src.splitlines()[index+1:]).count('{')+1
+            scopeSrc = ''.join('\n'.join(src.splitlines()[index+1:]).replace('}','}|').split('|')[:count])
 
-            skip, l = parseScope(s, rDepth+1)
+            skip, funcLocals = parseScope(scopeSrc, rDepth+1)
             skip += 1
 
             skip_ = 0
             cleanLines = []
-            for i_,line in enumerate(s.splitlines()):
+            for line in scopeSrc.splitlines():
                 if skip_:
                     skip_ -= 1
                     continue
@@ -161,14 +161,14 @@ def parseScope(src: str, rDepth=0):  # sourcery skip: low-code-quality
                     continue
 
                 if line.startswith('fn'):
-                    skip_ += '\n'.join(s.splitlines()[i:]).count('\n',0,s.find('}'))
+                    skip_ += '\n'.join(scopeSrc.splitlines()[i:]).count('\n',0,scopeSrc.find('}'))
                     continue
 
                 f, *args = line.split()
                 line = f, ' '.join(args).strip().strip('()').strip()
                 cleanLines.append(line)
 
-            func[fname] = fargs, cleanLines, l
+            func[fname] = fargs, cleanLines, funcLocals
 
         elif name == 'let':
             value = line.split('=', 1)[1].strip()
