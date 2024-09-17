@@ -324,11 +324,18 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
             cond = line[1].removesuffix(') {').strip().replace('true','1').replace('false','0')
             cond = evalExpr(cond,vars)
             if str(cond).removesuffix('.0') == '0':
-                for line in code[index:]:
-                    if line[0].endswith('}'):
-                        break
-                    else:
-                        skip += 1
+                found = 0
+                for line in code[index+1:]:
+                    if '}' in ''.join(line):
+                        if not found:
+                            break
+
+                        found -= 1
+
+                    elif '{' in ''.join(line):
+                        found += 1
+
+                    skip += 1
 
         elif fname == 'fn':
             for line in code[index-1:]:
@@ -388,7 +395,7 @@ debug = False
 # Parse
 parseScope(src)
 
-if debug:
+if debug or True:
     print(func)
 
 # Entry point

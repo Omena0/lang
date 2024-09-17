@@ -1,13 +1,11 @@
 
-fn main {
-    print("real")
-    if (!true) {
-        print("what")
-        if (false) {
-            print("how")
-        }
-        print("last") // bug here
+print("real")
+if (!true) {
+    print("what")
+    if (false) {
+        print("how")
     }
-    print("last x2")
+    print("bug here")
 }
+print("last x2")
 
