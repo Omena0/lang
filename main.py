@@ -2,7 +2,7 @@ import shlex
 import sys
 import os
 
-operators = ['+', '-', '*', '/', '%', '^', '&', '|', '!']
+operators = '+-*/%^&|!<>='
 
 
 def prepareSource(src: str):
@@ -36,7 +36,7 @@ def calc(left: str, oper: str, right: str, vars: dict):
         if left.startswith('(') and left.endswith(')'):
             left = evalExpr(left, vars)
 
-    if not right.replace('.', '', 1).isnumeric():
+    if not right.replace('.', '', 1).isnumeric() and right:
         if right not in vars:
             raise UnboundLocalError(f'Variable {right} is not defined')
 
@@ -63,6 +63,16 @@ def calc(left: str, oper: str, right: str, vars: dict):
             return not bool(right)
         case '%':
             return float(left) % float(right)
+        case '<':
+            return float(left) < float(right)
+        case '>':
+            return float(left) > float(right)
+        case '<=':
+            return float(left) <= float(right)
+        case '>=':
+            return float(left) >= float(right)
+        case '==':
+            return left == right
         case _:
             return right
 
@@ -82,12 +92,12 @@ def evalExpr(expr: str, vars, calledFromSelf=False):
             continue
 
         if chr in operators:
-            if oper:
+            if oper and False:
                 raise SyntaxError(
                     f'Operator ({chr}) is already set (to {oper}) at "{expr}" [{i}]'
                 )
 
-            oper = chr
+            oper += chr
             seenOperator = True
 
         elif chr == '(':
@@ -114,6 +124,12 @@ def evalExpr(expr: str, vars, calledFromSelf=False):
             else:
                 left = str(left)
                 left += chr
+
+    if not (left.isnumeric() or left in vars) and left:
+        raise SyntaxError(f'{left} is not a defined variable or number.')
+
+    if not (right.isnumeric() or right in vars) and right:
+        raise SyntaxError(f'{right} is not a defined variable or number.')
 
     if calledFromSelf:
         return 0, calc(left, oper, right, vars)
@@ -193,8 +209,11 @@ def parseScope(src: str, rDepth=0):  # sourcery skip: low-code-quality
 
             try:
                 value = evalExpr(value, locals)
-            except UnboundLocalError:
-                ...
+            except:
+                if debug: print('Could not eval')
+                if not rDepth:
+                    code.append((name,args))
+                continue
 
             if debug: print(f'Setting {args[0]} to {value}')
 
@@ -202,7 +221,9 @@ def parseScope(src: str, rDepth=0):  # sourcery skip: low-code-quality
 
         elif name == 'if':
             if '(' not in line or ')' not in line:
-                raise SyntaxError(f'Parse-time condition not found in {line}.')
+                line = line.replace(' ','(',1).replace(' ',')',1)
+                if '(' not in line or ')' not in line:
+                    raise SyntaxError(f'Parse-time condition not found in {src.splitlines()[index]}.')
 
             cond = line.split('(')[1].split(')')[0].strip()
             cond = cond.replace('true','1').replace('false','0')
@@ -227,15 +248,14 @@ def parseScope(src: str, rDepth=0):  # sourcery skip: low-code-quality
                                 cleanArgs.append(arg)
                         code.append(cleanArgs)
 
-        else:
+        elif not rDepth:
             cleanArgs = []
             for arg in args:
                 arg = arg.replace('(', '').replace(')', '').strip()
                 if arg:
                     cleanArgs.append(arg)
 
-            if not rDepth:
-                code.append((name, cleanArgs))
+            code.append((name, cleanArgs))
 
     if not rDepth and 'main' not in src:
         func['main'] = ([], code, locals)
@@ -243,42 +263,47 @@ def parseScope(src: str, rDepth=0):  # sourcery skip: low-code-quality
     return (index, locals) if rDepth else func
 
 ### RUN-TIME ###
-def parseArgs(line:list[list[str]], runFunc, func, stdlib, vars):
-    args = line[1] if isinstance(line[1], list) else line[1].split(',')
+def parseArgs(args, func, stdlib, vars):
 
     result = []
     for value in args:
         value = value.strip()
 
-        if value.startswith('"') or value.replace('.', '', 1).isnumeric():
-            v = line[1] if isinstance(line[1], str) else ' '.join(line[1])
-            v = v.strip('"')
+        try: v = evalExpr(value,vars)
+        except: ...
+        else:
+            result.append(v)
+            continue
 
-        elif value in vars:
-            v = vars[value]
+        if value.startswith('"') or value.replace('.', '', 1).isnumeric():
+            v = value.strip('"')
 
         elif value in stdlib:
             v = stdlib[value](*args[1:])
-            result.append(v.strip('"'))
+            try: v.strip('"')
+            except: ...
+            result.append(v)
             break
 
         elif value in func:
-            v = runFunc(func, value, line[1][1:])
+            v = runFunc(func, value, )
             break
+
+        elif value in '()':
+            continue
 
         else:
             if not (value.replace('_','').isalnum() and value[0].replace('_','a').isalpha()):
-                raise SyntaxError(f'Unexpected "{value}" in runtime function call.')
+                raise SyntaxError(f'Unexpected "{value}" in runtime function call in {args}.')
 
-            raise UnboundLocalError(f'Variable "{value}" is not defined.')
+            raise UnboundLocalError(f'Variable "{value}" is not defined in {args}.')
 
-        try:
-            v = int(v)
+        try: v = int(v)
+        except:
+            try: v = float(v)
+            except: ...
 
-        except ValueError:
-            pass
-
-        result.append(str(v).strip('"'))
+        result.append(v)
 
     return result
 
@@ -290,6 +315,16 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
         print(f'Running function {name} with args {args}')
 
     argNames, code, vars = func[name]
+
+    if len(argNames) != len(args):
+        count = len(argNames)-len(args)
+        print(args)
+        if count > 0:
+            raise TypeError(f'{name}() missing {count} argument{'s' if count>1 else ''}: {', '.join(argNames[len(args):])}')
+        else:
+            raise TypeError(f'{name}() takes {len(argNames)} argument{'s' if len(argNames)>1 else ''} but {len(args)} were given.')
+
+
     vars.update(dict(zip(argNames, args)))
 
     skip = 0
@@ -317,8 +352,20 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
             return ret
 
         elif fname == 'let':
-            if debug:
-                print('Why is let here?')
+            # Runtime variable declaration
+            varName, _, *varValue = line[1]
+            try:
+                varValue = evalExpr(' '.join(varValue),vars)
+            except:
+                if debug: print(f'Could not runtime eval')
+
+            if varValue[0] in func:
+                varValue = runFunc(func,varValue[0],varValue[2:-1])
+
+            elif varValue[0] in stdlib:
+                varValue = stdlib[varValue[0]](parseArgs(varValue[2:-1],func,stdlib,vars))
+
+            vars[varName] = varValue
 
         elif fname == 'if':
             cond = line[1].removesuffix(') {').strip().replace('true','1').replace('false','0')
@@ -353,12 +400,15 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
         elif fname in stdlib:
             if debug:
                 print(f'Using stdlib function {fname}')
-            
-            args = parseArgs(line, runFunc, func, stdlib, vars)
-            stdlib[fname](*args)
+
+            # Parse stdlib args
+            funcArgs = parseArgs(line[1].split(','), func, stdlib, vars)
+            stdlib[fname](*funcArgs)
 
         elif fname in func:
-            runFunc(func, fname, args)
+            # Parse func args
+            funcArgs = parseArgs(line[1].split(','),func,stdlib,vars)
+            runFunc(func, fname, funcArgs)
 
         else:
             if not (fname.replace('_','').isalnum() and fname[0].replace('_','a').isalpha()):

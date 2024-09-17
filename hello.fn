@@ -1,11 +1,11 @@
 
-print("real")
-if (!true) {
-    print("what")
-    if (false) {
-        print("how")
+fn main() {
+    fn recurse(x) {
+        print(x,x*2,x*3,x*4,x*5,x*6,x*7,x*8,x*9,x*10)
+        if (x < 10) {
+            recurse(x+1)
+        }
     }
-    print("bug here")
-}
-print("last x2")
 
+    recurse(1)
+}
