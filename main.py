@@ -2,6 +2,7 @@ import shlex
 import sys
 import os
 
+
 operators = '+-*/%^&|!<>='
 
 
@@ -13,6 +14,7 @@ def prepareSource(src: str):
         fixed += line + '\n'
 
     return fixed.replace('(', ' ( ').replace(')', ' ) ').replace('  ', ' ')
+
 
 def calc(left: str, oper: str, right: str, vars: dict):
     # sourcery skip: remove-unnecessary-cast
@@ -76,7 +78,9 @@ def calc(left: str, oper: str, right: str, vars: dict):
         case _:
             return right
 
+
 def evalExpr(expr: str, vars, calledFromSelf=False):
+    # sourcery skip: low-code-quality
     left = ''
     right = ''
     oper = ''
@@ -92,11 +96,6 @@ def evalExpr(expr: str, vars, calledFromSelf=False):
             continue
 
         if chr in operators:
-            if oper and False:
-                raise SyntaxError(
-                    f'Operator ({chr}) is already set (to {oper}) at "{expr}" [{i}]'
-                )
-
             oper += chr
             seenOperator = True
 
@@ -125,24 +124,26 @@ def evalExpr(expr: str, vars, calledFromSelf=False):
                 left = str(left)
                 left += chr
 
-    if not (left.isnumeric() or left in vars) and left:
+    if not left.isnumeric() and left not in vars and left:
         raise SyntaxError(f'{left} is not a defined variable or number.')
 
-    if not (right.isnumeric() or right in vars) and right:
+    if not right.isnumeric() and right not in vars and right:
         raise SyntaxError(f'{right} is not a defined variable or number.')
 
     if calledFromSelf:
         return 0, calc(left, oper, right, vars)
 
-    if not (oper or right):
-        r = calc(left,'+',0,vars)
-    else:
+    if oper or right:
         r = calc(left, oper, right, vars)
 
+    else:
+        r = calc(left, '+', 0, vars)
+
     try: r = int(r)
-    except: ...
+    except Exception: ...
 
     return r
+
 
 func = {}
 ### PARSE-TIME ###
@@ -160,7 +161,7 @@ def parseScope(src: str, rDepth=0):  # sourcery skip: low-code-quality
         if not line.strip():
             continue
 
-        name, *args = shlex.split(line.replace(',', ' ').strip(),posix=False)
+        name, *args = shlex.split(line.replace(',', ' ').strip(), posix=False)
 
         if name == 'fn':
             fname = args[0]
@@ -175,7 +176,7 @@ def parseScope(src: str, rDepth=0):  # sourcery skip: low-code-quality
                 i += 1
 
             count = ''.join(src.splitlines()[index+1:]).count('{')+1
-            scopeSrc = ''.join('\n'.join(src.splitlines()[index+1:]).replace('}','|}').split('|')[:count])
+            scopeSrc = ''.join('\n'.join(src.splitlines()[index+1:]).replace('}', '|}').split('|')[:count])
 
             skip, funcLocals = parseScope(scopeSrc, rDepth+1)
             skip += 1
@@ -195,7 +196,7 @@ def parseScope(src: str, rDepth=0):  # sourcery skip: low-code-quality
                     continue
 
                 elif line.startswith('fn'):
-                    skip_ += '\n'.join(scopeSrc.splitlines()[i:]).count('\n',0,scopeSrc.find('}'))
+                    skip_ += '\n'.join(scopeSrc.splitlines()[i:]).count('\n', 0, scopeSrc.find('}'))
                     continue
 
                 f, *args = line.split()
@@ -205,14 +206,14 @@ def parseScope(src: str, rDepth=0):  # sourcery skip: low-code-quality
             func[fname] = fargs, cleanLines, funcLocals
 
         elif name == 'let':
-            value = line.split('=', 1)[1].strip().replace('true','1').replace('false','0')
+            value = line.split('=', 1)[1].strip().replace('true', '1').replace('false', '0')
 
             try:
                 value = evalExpr(value, locals)
-            except:
+            except Exception:
                 if debug: print('Could not eval')
                 if not rDepth:
-                    code.append((name,args))
+                    code.append((name, args))
                 continue
 
             if debug: print(f'Setting {args[0]} to {value}')
@@ -221,14 +222,14 @@ def parseScope(src: str, rDepth=0):  # sourcery skip: low-code-quality
 
         elif name == 'if':
             if '(' not in line or ')' not in line:
-                line = line.replace(' ','(',1).replace(' ',')',1)
-                if '(' not in line or ')' not in line:
-                    raise SyntaxError(f'Parse-time condition not found in {src.splitlines()[index]}.')
+                line = line.replace(' ', '(', 1).replace(' ', ')', 1)
+            if '(' not in line or ')' not in line:
+                raise SyntaxError(f'Parse-time condition not found in {src.splitlines()[index]}.')
 
             cond = line.split('(')[1].split(')')[0].strip()
-            cond = cond.replace('true','1').replace('false','0')
-            try: cond = evalExpr(cond,locals)
-            except: ...
+            cond = cond.replace('true', '1').replace('false', '0')
+            try: cond = evalExpr(cond, locals)
+            except Exception: ...
             else:
                 found = 0
                 skip = -3
@@ -238,11 +239,11 @@ def parseScope(src: str, rDepth=0):  # sourcery skip: low-code-quality
                         found -= 1
                     if '{' in line:
                         found += 1
-                    if str(cond).replace('.0','') == '0':
+                    if str(cond).replace('.0', '') == '0':
                         skip += 1
                     else:
                         cleanArgs = []
-                        for arg in shlex.split(line,posix=False):
+                        for arg in shlex.split(line, posix=False):
                             arg = arg.replace('(', '').replace(')', '').strip()
                             if arg:
                                 cleanArgs.append(arg)
@@ -262,6 +263,7 @@ def parseScope(src: str, rDepth=0):  # sourcery skip: low-code-quality
 
     return (index, locals) if rDepth else func
 
+
 ### RUN-TIME ###
 def parseArgs(args, func, stdlib, vars):
 
@@ -269,8 +271,8 @@ def parseArgs(args, func, stdlib, vars):
     for value in args:
         value = value.strip()
 
-        try: v = evalExpr(value,vars)
-        except: ...
+        try: v = evalExpr(value, vars)
+        except Exception: ...
         else:
             result.append(v)
             continue
@@ -281,31 +283,32 @@ def parseArgs(args, func, stdlib, vars):
         elif value in stdlib:
             v = stdlib[value](*args[1:])
             try: v.strip('"')
-            except: ...
+            except Exception: ...
             result.append(v)
             break
 
         elif value in func:
-            v = runFunc(func, value, )
+            v = runFunc(func, value, *args[1:])
             break
 
         elif value in '()':
             continue
 
         else:
-            if not (value.replace('_','').isalnum() and value[0].replace('_','a').isalpha()):
+            if not (value.replace('_', '').isalnum() and value[0].replace('_', 'a').isalpha()):
                 raise SyntaxError(f'Unexpected "{value}" in runtime function call in {args}.')
 
             raise UnboundLocalError(f'Variable "{value}" is not defined in {args}.')
 
         try: v = int(v)
-        except:
+        except Exception:
             try: v = float(v)
-            except: ...
+            except Exception: ...
 
         result.append(v)
 
     return result
+
 
 def runFunc(func, name, args):  # sourcery skip: low-code-quality
     if name not in func:
@@ -320,9 +323,9 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
         count = len(argNames)-len(args)
         print(args)
         if count > 0:
-            raise TypeError(f'{name}() missing {count} argument{'s' if count>1 else ''}: {', '.join(argNames[len(args):])}')
+            raise TypeError(f'{name}() missing {count} argument{'s' if count > 1 else ''}: {', '.join(argNames[len(args):])}')
         else:
-            raise TypeError(f'{name}() takes {len(argNames)} argument{'s' if len(argNames)>1 else ''} but {len(args)} were given.')
+            raise TypeError(f'{name}() takes {len(argNames)} argument{'s' if len(argNames) > 1 else ''} but {len(args)} were given.')
 
 
     vars.update(dict(zip(argNames, args)))
@@ -355,21 +358,22 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
             # Runtime variable declaration
             varName, _, *varValue = line[1]
             try:
-                varValue = evalExpr(' '.join(varValue),vars)
-            except:
-                if debug: print(f'Could not runtime eval')
+                varValue = evalExpr(' '.join(varValue), vars)
+            except Exception:
+                if debug:
+                    print('Could not runtime eval')
 
             if varValue[0] in func:
-                varValue = runFunc(func,varValue[0],varValue[2:-1])
+                varValue = runFunc(func, varValue[0], varValue[2:-1])
 
             elif varValue[0] in stdlib:
-                varValue = stdlib[varValue[0]](parseArgs(varValue[2:-1],func,stdlib,vars))
+                varValue = stdlib[varValue[0]](parseArgs(varValue[2:-1], func, stdlib, vars))
 
             vars[varName] = varValue
 
         elif fname == 'if':
-            cond = line[1].removesuffix(') {').strip().replace('true','1').replace('false','0')
-            cond = evalExpr(cond,vars)
+            cond = line[1].removesuffix(') {').strip().replace('true', '1').replace('false', '0')
+            cond = evalExpr(cond, vars)
             if str(cond).removesuffix('.0') == '0':
                 found = 0
                 for line in code[index+1:]:
@@ -407,13 +411,17 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
 
         elif fname in func:
             # Parse func args
-            funcArgs = parseArgs(line[1].split(','),func,stdlib,vars)
+            funcArgs = parseArgs(line[1].split(','), func, stdlib, vars)
             runFunc(func, fname, funcArgs)
 
-        else:
-            if not (fname.replace('_','').isalnum() and fname[0].replace('_','a').isalpha()):
-                raise UnboundLocalError(f'Unexpected "{fname}" in runtime function name.')
+        elif (
+            fname.replace('_', '').isalnum()
+            and fname[0].replace('_', 'a').isalpha()
+        ):
             raise NameError(f'Function "{fname}" is not defined.')
+        else:
+            raise UnboundLocalError(f'Unexpected "{fname}" in runtime function name.')
+
 
 stdlib = {}
 def load_stdlib(path: str = 'stdlib'):
@@ -445,7 +453,7 @@ debug = False
 # Parse
 parseScope(src)
 
-if debug or True:
+if debug:
     print(func)
 
 # Entry point
@@ -453,6 +461,6 @@ r = runFunc(func, 'main', [])
 
 try:
     r = int(r)
-except:
+except Exception:
     ...
 sys.exit(r)
