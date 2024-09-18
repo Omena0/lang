@@ -5,4 +5,3 @@ def std_random():
 
 def std_randrange(args):
     return r.randrange(*args)
-

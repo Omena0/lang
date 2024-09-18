@@ -46,7 +46,7 @@ def calc(left: str, oper: str, right: str, vars: dict):
         if right.startswith('(') and right.endswith(')'):
             right = evalExpr(right, vars)
 
-    left,right = left.strip('"'), right.strip('"')
+    left, right = left.strip('"'), right.strip('"')
 
     match oper:
         case '+':
@@ -294,14 +294,14 @@ def parseArgs(args, func, stdlib, vars):
             v = vars[value]
 
         elif value in stdlib:
-            v = stdlib[value](*parseArgs(args[1:],func,stdlib,vars))
+            v = stdlib[value](*parseArgs(args[1:], func, stdlib, vars))
             try: v.strip('"')
             except Exception: ...
             result.append(v)
             break
 
         elif value in func:
-            v = runFunc(func, value, parseArgs(args[1:],func,stdlib,vars))
+            v = runFunc(func, value, parseArgs(args[1:], func, stdlib, vars))
             break
 
         elif value in '()':
@@ -320,7 +320,7 @@ def parseArgs(args, func, stdlib, vars):
 
         result.append(v)
 
-    if len(result) == 1 and isinstance(result[0],list):
+    if len(result) == 1 and isinstance(result[0], list):
         result = result[0]
 
     if debug:
@@ -366,15 +366,15 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
         if fname == 'return':
             ret = line[1:]
             try:
-                ret = evalExpr(' '.join(ret),vars)
-            except:
-                if debug: print(f'Could not runtime eval.')
+                ret = evalExpr(' '.join(ret), vars)
+            except Exception:
+                if debug: print('Could not runtime eval.')
 
             if ret[0] in func:
-                ret = runFunc(func,ret[0],ret[1:])
+                ret = runFunc(func, ret[0], ret[1:])
 
             elif ret[0] in stdlib:
-                ret = stdlib[ret[0]](parseArgs(','.join(ret[1:]).split(','),func,stdlib,vars))
+                ret = stdlib[ret[0]](parseArgs(','.join(ret[1:]).split(','), func, stdlib, vars))
 
             if debug:
                 print(f'Returning {ret}')
@@ -383,7 +383,7 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
 
         elif fname == 'let':
             # Runtime variable declaration
-            varName, _, *varValue = shlex.split(line[1].replace(' ( ', ' ').replace(',',', '), posix=False)
+            varName, _, *varValue = shlex.split(line[1].replace(' ( ', ' ').replace(',', ', '), posix=False)
 
             if any([op in varValue for op in operators]):
                 try:
@@ -452,18 +452,18 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
             elif exposed in locals():
                 vars[exposed] = globals()[exposed]
             elif exposed in dir(__builtins__):
-                vars[exposed] = getattr(__builtins__,exposed)
+                vars[exposed] = getattr(__builtins__, exposed)
             else:
                 raise NameError(f'{exposed} is not defined.')
 
         elif fname in vars:
             if callable(vars[fname]):
-                vars[fname](*parseArgs(line[1],func,stdlib,vars))
+                vars[fname](*parseArgs(line[1], func, stdlib, vars))
 
         elif fname in stdlib:
             # Parse stdlib args
             line_1 = line[1]
-            if isinstance(line_1,list):
+            if isinstance(line_1, list):
                 line_1 = ','.join(line_1)
             funcArgs = parseArgs(line_1.split(','), func, stdlib, vars)
 
