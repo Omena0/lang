@@ -1,0 +1,34 @@
+
+fn guess(target,tries) {
+    if (tries <= 0) {
+        print("Out of tries! Game Over.")
+        return
+    }
+
+    print(tries,"Tries remaining!")
+
+    let guess = input("Guess: ")
+
+    if (guess == target) {
+        print("Correct! You win!")
+        return
+    }
+
+    if (guess < target) {
+        print("Higher")
+    }
+
+    if (guess > target) {
+        print("Lower")
+    }
+
+    guess(target,tries-1)
+    return
+}
+
+fn main() {
+    print("Guess the number!")
+    let target = randrange(0,1000)
+    guess(target,10)
+    print("The number was",target)
+}

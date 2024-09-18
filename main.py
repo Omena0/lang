@@ -28,7 +28,7 @@ def calc(left: str, oper: str, right: str, vars: dict):
         if not right:
             return left
 
-    if not left.replace('.', '', 1).isnumeric() and left:
+    if not left.replace('.', '', 1).isnumeric() and left and not left.startswith('"'):
         if left not in vars:
             raise UnboundLocalError(f'Variable {left} is not defined')
 
@@ -36,13 +36,15 @@ def calc(left: str, oper: str, right: str, vars: dict):
         if left.startswith('(') and left.endswith(')'):
             left = evalExpr(left, vars)
 
-    if not right.replace('.', '', 1).isnumeric() and right:
+    if not right.replace('.', '', 1).isnumeric() and right and not right.startswith('"'):
         if right not in vars:
             raise UnboundLocalError(f'Variable {right} is not defined')
 
         right = str(vars[right]).strip()
         if right.startswith('(') and right.endswith(')'):
             right = evalExpr(right, vars)
+
+    left,right = left.strip('"'), right.strip('"')
 
     match oper:
         case '+':
@@ -73,6 +75,10 @@ def calc(left: str, oper: str, right: str, vars: dict):
             return float(left) >= float(right)
         case '==':
             return left == right
+        case '!=':
+            return left != right
+        case '=!':
+            return left != right
         case _:
             return right
 
@@ -84,6 +90,9 @@ def evalExpr(expr: str, vars, calledFromSelf=False):
     jumpToNext = 0
     jumps = 1
 
+    if expr.startswith('"') and expr.endswith('"') and expr.count('"') == 2:
+        raise ValueError(f'Expression cannot be a string.')
+
     for i, chr in enumerate(expr):
         if jumpToNext:
             if chr == ')':
@@ -92,11 +101,6 @@ def evalExpr(expr: str, vars, calledFromSelf=False):
             continue
 
         if chr in operators:
-            if oper and False:
-                raise SyntaxError(
-                    f'Operator ({chr}) is already set (to {oper}) at "{expr}" [{i}]'
-                )
-
             oper += chr
             seenOperator = True
 
@@ -125,10 +129,10 @@ def evalExpr(expr: str, vars, calledFromSelf=False):
                 left = str(left)
                 left += chr
 
-    if not (left.isnumeric() or left in vars) and left:
+    if not (left.isnumeric() or left.startswith('"') or left in vars) and left:
         raise SyntaxError(f'{left} is not a defined variable or number.')
 
-    if not (right.isnumeric() or right in vars) and right:
+    if not (right.isnumeric() or right.startswith('"') or right in vars) and right:
         raise SyntaxError(f'{right} is not a defined variable or number.')
 
     if calledFromSelf:
@@ -189,9 +193,6 @@ def parseScope(src: str, rDepth=0):  # sourcery skip: low-code-quality
 
                 line = line.strip()
                 if not line:
-                    continue
-
-                elif line.startswith('let'):
                     continue
 
                 elif line.startswith('fn'):
@@ -278,6 +279,9 @@ def parseArgs(args, func, stdlib, vars):
         if value.startswith('"') or value.replace('.', '', 1).isnumeric():
             v = value.strip('"')
 
+        elif value in vars:
+            v = vars[value]
+
         elif value in stdlib:
             v = stdlib[value](*args[1:])
             try: v.strip('"')
@@ -296,7 +300,7 @@ def parseArgs(args, func, stdlib, vars):
             if not (value.replace('_','').isalnum() and value[0].replace('_','a').isalpha()):
                 raise SyntaxError(f'Unexpected "{value}" in runtime function call in {args}.')
 
-            raise UnboundLocalError(f'Variable "{value}" is not defined in {args}.')
+            raise UnboundLocalError(f'Variable "{value}" is not defined in args {args}.')
 
         try: v = int(v)
         except:
@@ -304,6 +308,12 @@ def parseArgs(args, func, stdlib, vars):
             except: ...
 
         result.append(v)
+
+    if len(result) == 1 and isinstance(result[0],list):
+        result = result[0]
+
+    if debug:
+        print(f'ParseArgs: {args} {result}')
 
     return result
 
@@ -341,29 +351,37 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
             print(f'Line: {line}')
             print(f'Fname: {fname}')
 
-        if fname == 'ret':
-            ret = (
-                evalExpr(' '.join(line[1]), vars)
-                if isinstance(line[1], list)
-                else evalExpr(' '.join(line[1:]), vars)
-            )
+        if fname == 'return':
+            ret = line[1:]
+            try:
+                ret = evalExpr(' '.join(ret),vars)
+            except:
+                if debug: print(f'Could not runtime eval.')
+
+            if ret[0] in func:
+                ret = runFunc(func,ret[0],ret[1:])
+
+            elif ret[0] in stdlib:
+                ret = stdlib[ret[0]](parseArgs(','.join(ret[1:]).split(','),func,stdlib,vars))
+
             if debug:
                 print(f'Returning {ret}')
+
             return ret
 
         elif fname == 'let':
             # Runtime variable declaration
-            varName, _, *varValue = line[1]
+            varName, _, *varValue = shlex.split(line[1].replace(' ( ', ' '), posix=False)
             try:
                 varValue = evalExpr(' '.join(varValue),vars)
             except:
-                if debug: print(f'Could not runtime eval')
+                if debug: print(f'Could not runtime eval.')
 
             if varValue[0] in func:
-                varValue = runFunc(func,varValue[0],varValue[2:-1])
+                varValue = runFunc(func,varValue[0],varValue[1:])
 
             elif varValue[0] in stdlib:
-                varValue = stdlib[varValue[0]](parseArgs(varValue[2:-1],func,stdlib,vars))
+                varValue = stdlib[varValue[0]](parseArgs(','.join(varValue[1:]).split(','),func,stdlib,vars))
 
             vars[varName] = varValue
 
@@ -398,11 +416,12 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
                 parseScope(prepareSource(f.read()))
 
         elif fname in stdlib:
-            if debug:
-                print(f'Using stdlib function {fname}')
-
             # Parse stdlib args
             funcArgs = parseArgs(line[1].split(','), func, stdlib, vars)
+            
+            if debug:
+                print(f'Using stdlib function {fname} with {funcArgs}')
+            
             stdlib[fname](*funcArgs)
 
         elif fname in func:
@@ -440,12 +459,12 @@ load_stdlib()
 
 src = prepareSource(open(sys.argv[1]).read())
 
-debug = False
+debug = 0
 
 # Parse
 parseScope(src)
 
-if debug or True:
+if debug:
     print(func)
 
 # Entry point
