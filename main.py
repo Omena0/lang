@@ -95,7 +95,7 @@ def evalExpr(expr: str, vars, calledFromSelf=False):
     jumps = 1
 
     if expr.startswith('"') and expr.endswith('"') and expr.count('"') == 2:
-        raise ValueError(f'Expression cannot be a string.')
+        raise ValueError('Expression cannot be a string.')
 
     for chr in ',':
         if chr in expr:
@@ -275,24 +275,28 @@ def parseScope(src: str, rDepth=0):  # sourcery skip: low-code-quality
 
 
 ### RUN-TIME ###
-def parseArgs(args, func, stdlib, vars):
+def parseArgs(args, func, stdlib, vars):  # sourcery skip: low-code-quality
 
     result = []
     for value in args:
         value = value.strip()
 
+        # Try to eval argument
         try: v = evalExpr(value, vars)
         except Exception: ...
         else:
             result.append(v)
             continue
 
+        # Strip string ""
         if value.startswith('"') or value.replace('.', '', 1).isnumeric():
             v = value.strip('"')
 
+        # Check if it's a variable
         elif value in vars:
             v = vars[value]
 
+        # Check if it's a stdlib function
         elif value in stdlib:
             v = stdlib[value](*parseArgs(args[1:], func, stdlib, vars))
             try: v.strip('"')
@@ -300,19 +304,23 @@ def parseArgs(args, func, stdlib, vars):
             result.append(v)
             break
 
+        # Check if it's a function
         elif value in func:
             v = runFunc(func, value, parseArgs(args[1:], func, stdlib, vars))
             break
 
+        # Remove single parenthesis from args
         elif value in '()':
             continue
 
         else:
+            # Nothing else fit, raise exception
             if not (value.replace('_', '').isalnum() and value[0].replace('_', 'a').isalpha()):
                 raise SyntaxError(f'Unexpected "{value}" in runtime function call in {args}.')
 
             raise UnboundLocalError(f'Variable "{value}" is not defined in args {args}.')
 
+        # Try to convert to int or float
         try: v = int(v)
         except Exception:
             try: v = float(v)
@@ -338,6 +346,7 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
 
     argNames, code, vars = func[name]
 
+    # Invalid number of args
     if len(argNames) != len(args):
         count = len(argNames)-len(args)
         print(args)
@@ -346,9 +355,10 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
         else:
             raise TypeError(f'{name}() takes {len(argNames)} argument{'s' if len(argNames) > 1 else ''} but {len(args)} were given.')
 
-
+    # Add to local variables
     vars.update(dict(zip(argNames, args)))
 
+    # Run the actual code
     skip = 0
     for index, line in enumerate(code):
         if skip > 0:
@@ -357,12 +367,14 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
             continue
 
         fname = line[0]
+
         if fname == '}': continue
 
         if debug:
             print(f'Line: {line}')
             print(f'Fname: {fname}')
 
+        # Runtime keywords
         if fname == 'return':
             ret = line[1:]
             try:
@@ -370,9 +382,11 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
             except Exception:
                 if debug: print('Could not runtime eval.')
 
+            # Is func?
             if ret[0] in func:
                 ret = runFunc(func, ret[0], ret[1:])
 
+            # Is stdlib?
             elif ret[0] in stdlib:
                 ret = stdlib[ret[0]](parseArgs(','.join(ret[1:]).split(','), func, stdlib, vars))
 
@@ -385,37 +399,48 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
             # Runtime variable declaration
             varName, _, *varValue = shlex.split(line[1].replace(' ( ', ' ').replace(',', ', '), posix=False)
 
-            if any([op in varValue for op in operators]):
+            # If has an operator, try eval
+            if any(op in varValue for op in operators):
                 try:
                     varValue = evalExpr(' '.join(varValue), vars)
                 except Exception:
                     if debug:
                         print('Could not runtime eval')
 
+            # Variable Value parsing
             vv = []
-
             for i in varValue:
+                # Is func?
                 if i in func:
                     vv.append(runFunc(func, varValue[0], varValue[1:]))
 
+                # Is stdlib?
                 elif i in stdlib:
                     vv = parseArgs(','.join(varValue[1:]).split(','), func, stdlib, vars)
                     if debug: print(f'Using stdlib function {i} with {vv}')
                     vv = stdlib[i](vv)
                     return
 
+                # Is var?
                 elif i in vars:
                     vv.append(vars[i])
 
+                # Else const
                 else:
                     vv.append(i)
 
             vars[varName] = vv
 
         elif fname == 'if':
+            # Clean line and try eval
             cond = line[1].removesuffix(') {').strip().replace('true', '1').replace('false', '0')
             cond = evalExpr(cond, vars)
+
+            # Is false?
             if str(cond).removesuffix('.0') == '0':
+                # Count number of lines to skip,
+                # For every "{" it must find another "}".
+                # After the amount of { is less than }, break the loop
                 found = 0
                 for line in code[index+1:]:
                     if '}' in ''.join(line):
@@ -430,15 +455,29 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
                     skip += 1
 
         elif fname == 'fn':
-            for line in code[index-1:]:
-                if line[0].endswith('}'):
-                    break
-                else:
-                    skip += 1
+            # Count number of lines to skip,
+            # For every "{" it must find another "}".
+            # After the amount of { is less than }, break the loop
+            found = 0
+            for line in code[index+1:]:
+                if '}' in ''.join(line):
+                    if not found:
+                        break
+
+                    found -= 1
+
+                elif '{' in ''.join(line):
+                    found += 1
+
+                skip += 1
 
         elif fname == 'import':
             if debug:
                 print(f'Importing {line[1][0]}')
+
+            # Read file and parse it
+            # Imported files are not RAN,
+            # but their functions are added to the namespace
             with open(line[1][0]) as f:
                 parseScope(prepareSource(f.read()))
 

@@ -5,7 +5,7 @@ Functional interperted language.
 
 Functions have no parse time optimisations!!!
 
-Using main function is not recomended but works.
+Using main function is recomended.
 
 ## Pretty lenient parsing (sometimes)
 
