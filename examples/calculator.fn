@@ -1,0 +1,19 @@
+
+// WIP
+
+fn parse(str) {
+    let s = split(str,' ',2)
+    let left = index(s,0)
+    let oper = index(s,1)
+    let right = index(s,2)
+    print(left,oper,right)
+    if (oper == "+") {
+        return left + right
+    }
+}
+
+fn main() {
+    let x = input("> ")
+    let result = parse(x)
+    print(result)
+}

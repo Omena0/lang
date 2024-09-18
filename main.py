@@ -97,6 +97,10 @@ def evalExpr(expr: str, vars, calledFromSelf=False):
     if expr.startswith('"') and expr.endswith('"') and expr.count('"') == 2:
         raise ValueError(f'Expression cannot be a string.')
 
+    for chr in ',':
+        if chr in expr:
+            raise ValueError(f'Expression cannot contain "{chr}".')
+
     for i, chr in enumerate(expr):
         if jumpToNext:
             if chr == ')':
@@ -290,14 +294,14 @@ def parseArgs(args, func, stdlib, vars):
             v = vars[value]
 
         elif value in stdlib:
-            v = stdlib[value](*args[1:])
+            v = stdlib[value](*parseArgs(args[1:],func,stdlib,vars))
             try: v.strip('"')
             except Exception: ...
             result.append(v)
             break
 
         elif value in func:
-            v = runFunc(func, value, *args[1:])
+            v = runFunc(func, value, parseArgs(args[1:],func,stdlib,vars))
             break
 
         elif value in '()':
@@ -320,7 +324,7 @@ def parseArgs(args, func, stdlib, vars):
         result = result[0]
 
     if debug:
-        print(f'ParseArgs: {args} {result}')
+        print(f'ParseArgs: {args} --> {result}')
 
     return result
 
@@ -379,20 +383,34 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
 
         elif fname == 'let':
             # Runtime variable declaration
-            varName, _, *varValue = shlex.split(line[1].replace(' ( ', ' '), posix=False)
-            try:
-                varValue = evalExpr(' '.join(varValue), vars)
-            except Exception:
-                if debug:
-                    print('Could not runtime eval')
+            varName, _, *varValue = shlex.split(line[1].replace(' ( ', ' ').replace(',',', '), posix=False)
 
-            if varValue[0] in func:
-                varValue = runFunc(func, varValue[0], varValue[1:])
+            if any([op in varValue for op in operators]):
+                try:
+                    varValue = evalExpr(' '.join(varValue), vars)
+                except Exception:
+                    if debug:
+                        print('Could not runtime eval')
 
-            elif varValue[0] in stdlib:
-                varValue = stdlib[varValue[0]](parseArgs(','.join(varValue[1:]).split(','), func, stdlib, vars))
+            vv = []
 
-            vars[varName] = varValue
+            for i in varValue:
+                if i in func:
+                    vv.append(runFunc(func, varValue[0], varValue[1:]))
+
+                elif i in stdlib:
+                    vv = parseArgs(','.join(varValue[1:]).split(','), func, stdlib, vars)
+                    if debug: print(f'Using stdlib function {i} with {vv}')
+                    vv = stdlib[i](vv)
+                    return
+
+                elif i in vars:
+                    vv.append(vars[i])
+
+                else:
+                    vv.append(i)
+
+            vars[varName] = vv
 
         elif fname == 'if':
             cond = line[1].removesuffix(') {').strip().replace('true', '1').replace('false', '0')
@@ -424,13 +442,34 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
             with open(line[1][0]) as f:
                 parseScope(prepareSource(f.read()))
 
+        elif fname == 'expose':
+            exposed = line[1][0]
+            if debug:
+                print(f'Exposing {exposed}')
+
+            if exposed in globals():
+                vars[exposed] = globals()[exposed]
+            elif exposed in locals():
+                vars[exposed] = globals()[exposed]
+            elif exposed in dir(__builtins__):
+                vars[exposed] = getattr(__builtins__,exposed)
+            else:
+                raise NameError(f'{exposed} is not defined.')
+
+        elif fname in vars:
+            if callable(vars[fname]):
+                vars[fname](*parseArgs(line[1],func,stdlib,vars))
+
         elif fname in stdlib:
             # Parse stdlib args
-            funcArgs = parseArgs(line[1].split(','), func, stdlib, vars)
-            
+            line_1 = line[1]
+            if isinstance(line_1,list):
+                line_1 = ','.join(line_1)
+            funcArgs = parseArgs(line_1.split(','), func, stdlib, vars)
+
             if debug:
                 print(f'Using stdlib function {fname} with {funcArgs}')
-            
+
             stdlib[fname](*funcArgs)
 
         elif fname in func:
@@ -461,8 +500,6 @@ def load_stdlib(path: str = 'stdlib'):
         for attr in dir(module):
             if not attr.startswith('std'):
                 continue
-            if not callable(getattr(module, attr)):
-                continue
             stdlib[attr.removeprefix('std_')] = getattr(module, attr)
 
 
@@ -472,7 +509,7 @@ load_stdlib()
 
 src = prepareSource(open(sys.argv[1]).read())
 
-debug = 0
+debug = True
 
 # Parse
 parseScope(src)
@@ -487,4 +524,5 @@ try:
     r = int(r)
 except Exception:
     ...
+
 sys.exit(r)
