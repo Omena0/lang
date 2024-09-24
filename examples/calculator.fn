@@ -2,6 +2,11 @@
 // WIP
 
 fn parse(str) {
+    let s = replace(s,'+',' + ')
+    let s = replace(s,'-',' - ')
+    let s = replace(s,'*',' * ')
+    let s = replace(s,'/',' / ')
+    let s = replace(s,'  ',' ')
     let s = split(str,' ',2)
     let left = index(s,0)
     let oper = index(s,1)
