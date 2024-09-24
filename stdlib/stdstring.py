@@ -4,6 +4,8 @@ def split(str, *args, **kwargs):
 
 def join(str, *args):
     return str.join(args)
-def replace(str,from,to):
-    return str.replace(from,to)
+
+
+def replace(str,from_,to):
+    return str.replace(from_,to)
 
