@@ -1,6 +1,3 @@
 
-def contains(x,y):
+def contains(x, y):
     return x in y
-
-
-

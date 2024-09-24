@@ -1,11 +1,11 @@
 
 # lang
 
-Functional interperted language.
+Functional interpreted language.
 
-Functions have no parse time optimisations!!!
+Functions have no parse time optimizations!!!
 
-Using main function is not recomended but works.
+Using main function is recommended.
 
 ## Pretty lenient parsing (sometimes)
 
