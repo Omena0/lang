@@ -2,18 +2,29 @@
 // WIP
 
 fn parse(str) {
-    let s = replace(s,'+',' + ')
+    let s = replace(str,'+',' + ')
     let s = replace(s,'-',' - ')
     let s = replace(s,'*',' * ')
     let s = replace(s,'/',' / ')
     let s = replace(s,'  ',' ')
-    let s = split(str,' ',2)
+    let s = split(s,' ',2)
     let left = index(s,0)
     let oper = index(s,1)
     let right = index(s,2)
-    print(left,oper,right)
     if (oper == "+") {
         return left + right
+    }
+    else if (oper == "-") {
+        return left - right
+    }
+    else if (oper == "*") {
+        return left * right
+    }
+    else if (oper == "/") {
+        return left / right
+    }
+    else {
+        return "Invalid operator"
     }
 }
 

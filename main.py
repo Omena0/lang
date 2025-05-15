@@ -15,7 +15,6 @@ def prepareSource(src: str):
 
     return fixed.replace('(', ' ( ').replace(')', ' ) ').replace('  ', ' ')
 
-
 def calc(left: str, oper: str, right: str, vars: dict):
     # sourcery skip: remove-unnecessary-cast
     left = str(left)
@@ -83,7 +82,6 @@ def calc(left: str, oper: str, right: str, vars: dict):
             return left != right
         case _:
             return right
-
 
 def evalExpr(expr: str, vars, calledFromSelf=False):
     # sourcery skip: low-code-quality
@@ -156,7 +154,6 @@ def evalExpr(expr: str, vars, calledFromSelf=False):
     except Exception: ...
 
     return r
-
 
 func = {}
 ### PARSE-TIME ###
@@ -273,7 +270,6 @@ def parseScope(src: str, rDepth=0):  # sourcery skip: low-code-quality
 
     return (index, locals) if rDepth else func
 
-
 ### RUN-TIME ###
 def parseArgs(args, func, stdlib, vars):  # sourcery skip: low-code-quality
 
@@ -290,15 +286,15 @@ def parseArgs(args, func, stdlib, vars):  # sourcery skip: low-code-quality
 
         # Strip string ""
         if value.startswith('"') or value.replace('.', '', 1).isnumeric():
-            v = value.strip('"')
-
-        # Check if it's a variable
+            v = value.strip('"')        # Check if it's a variable
         elif value in vars:
             v = vars[value]
 
         # Check if it's a stdlib function
         elif value in stdlib:
-            v = stdlib[value](*parseArgs(args[1:], func, stdlib, vars))
+            parsed_args = parseArgs(args[1:], func, stdlib, vars)
+            if debug: print(f'Calling stdlib function {value} with args: {parsed_args}')
+            v = stdlib[value](*parsed_args)
             try: v.strip('"')
             except Exception: ...
             result.append(v)
@@ -336,7 +332,6 @@ def parseArgs(args, func, stdlib, vars):  # sourcery skip: low-code-quality
 
     return result
 
-
 def runFunc(func, name, args):  # sourcery skip: low-code-quality
     if name not in func:
         raise NameError(f'Function {name} is not defined')
@@ -344,7 +339,11 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
     if debug:
         print(f'Running function {name} with args {args}')
 
-    argNames, code, vars = func[name]
+    argNames, code, func_vars = func[name]
+
+    # Create a new vars dict for this function call
+    # Copy the vars to avoid modifying the original
+    vars = func_vars.copy()
 
     # Invalid number of args
     if len(argNames) != len(args):
@@ -405,26 +404,53 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
                     varValue = evalExpr(' '.join(varValue), vars)
                 except Exception:
                     if debug:
-                        print('Could not runtime eval')
+                        print('Could not runtime eval')            # Variable Value parsing
+            vv = []                # Check if we're calling a stdlib function
+            if len(varValue) > 0 and varValue[0] in stdlib:
+                # For stdlib functions, parse arguments and call the function
+                func_name = varValue[0]
 
-            # Variable Value parsing
-            vv = []
+                # Special handling for input function
+                if func_name == "input":
+                    # Special handling for input to ensure string value is stored correctly
+                    prompt = ' '.join(varValue[1:]).strip('"')
+                    result = input(prompt)
+                    print(f"Debug: Direct input received: '{result}'")
+                    vars[varName] = result
+                    return
+
+                # Special handling for index function used in calculator
+                if func_name == "index":
+                    # Get the variable name that should contain the list
+                    list_var = varValue[1]
+                    index_val = int(varValue[2]) if varValue[2].isdigit() else varValue[2]
+
+                    if list_var in vars:
+                        result = vars[list_var][index_val]
+                        vars[varName] = result
+                        return                # Standard processing for other stdlib functions
+                args_text = ','.join(varValue[1:])
+                args = parseArgs(args_text.split(','), func, stdlib, vars)
+                if debug: print(f'Using stdlib function {func_name} with {args}')
+                try:
+                    result = stdlib[func_name](*args)  # Use * to unpack args
+                    # Store result directly, not as a list
+                    vars[varName] = result
+                    print(f"Debug: Set {varName} = '{result}'")  # Debug output
+                except Exception as e:
+                    if debug:
+                        print(f"Error calling {func_name}: {e}")
+                    vars[varName] = None
+
+            # For other cases (not stdlib function calls)
             for i in varValue:
                 # Is func?
                 if i in func:
                     vv.append(runFunc(func, varValue[0], varValue[1:]))
-
-                # Is stdlib?
-                elif i in stdlib:
-                    vv = parseArgs(','.join(varValue[1:]).split(','), func, stdlib, vars)
-                    if debug: print(f'Using stdlib function {i} with {vv}')
-                    vv = stdlib[i](vv)
-                    return
-
+                    break
                 # Is var?
                 elif i in vars:
                     vv.append(vars[i])
-
                 # Else const
                 else:
                     vv.append(i)
@@ -434,7 +460,45 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
         elif fname == 'if':
             # Clean line and try eval
             cond = line[1].removesuffix(') {').strip().replace('true', '1').replace('false', '0')
-            cond = evalExpr(cond, vars)
+
+            # Debug the condition before evaluation
+            if debug:
+                print(f"Evaluating condition: '{cond}'")
+
+            # Special handling for string variable comparison
+            if " == " in cond and any(var in cond for var in vars):
+                parts = cond.split(" == ")
+                left_part = parts[0].strip()
+                right_part = parts[1].strip()
+
+                # Get left value
+                left_value = vars.get(left_part, left_part)
+                if isinstance(left_value, str) and left_value.startswith('"') and left_value.endswith('"'):
+                    left_value = left_value.strip('"')
+
+                # Get right value
+                right_value = right_part
+                if right_part.startswith('"') and right_part.endswith('"'):
+                    right_value = right_part.strip('"')
+
+                # Special case for digits
+                if str(left_value).isdigit() and right_value.strip('"').isdigit():
+                    cond = str(left_value) == right_value.strip('"')
+                else:
+                    cond = str(left_value) == str(right_value.strip('"'))
+
+                if debug:
+                    print(f"String comparison: '{left_value}' == '{right_value}' => {cond}")
+            else:
+                try:
+                    cond = evalExpr(cond, vars)
+                except Exception as e:
+                    if debug:
+                        print(f"Error in condition evaluation: {e}")
+                    cond = 0  # Default to false on error
+
+            if debug:
+                print(f"Condition result: {cond}")
 
             # Is false?
             if str(cond).removesuffix('.0') == '0':
@@ -489,7 +553,7 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
             if exposed in globals():
                 vars[exposed] = globals()[exposed]
             elif exposed in locals():
-                vars[exposed] = globals()[exposed]
+                vars[exposed] = locals()[exposed]
             elif exposed in dir(__builtins__):
                 vars[exposed] = getattr(__builtins__, exposed)
             else:
@@ -498,18 +562,73 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
         elif fname in vars:
             if callable(vars[fname]):
                 vars[fname](*parseArgs(line[1], func, stdlib, vars))
-
         elif fname in stdlib:
             # Parse stdlib args
             line_1 = line[1]
+              # Special handling for print statements
+            if fname == 'print':
+                # Handle string with commas (variable references)
+                if isinstance(line_1, str) and ',' in line_1:
+                    parts = line_1.split(',')
+                    args_to_print = []
+
+                    for part in parts:
+                        part = part.strip()
+                        if part in vars:
+                            # It's a variable
+                            args_to_print.append(vars[part])
+                        elif part.startswith('"') and part.endswith('"'):
+                            # It's a string literal
+                            args_to_print.append(part.strip('"'))
+                        else:
+                            # Add as is
+                            args_to_print.append(part)
+
+                    print(*args_to_print)
+                    continue
+
+                # Handle list of arguments
+                elif isinstance(line_1, list):
+                    args_to_print = []
+                    for arg in line_1:
+                        # If it's a variable name
+                        if arg in vars:
+                            args_to_print.append(vars[arg])
+                        # If it's a string literal
+                        elif isinstance(arg, str) and arg.startswith('"') and arg.endswith('"'):
+                            args_to_print.append(arg.strip('"'))
+                        # Otherwise add as is
+                        else:
+                            args_to_print.append(arg)
+
+                    # Call print with all arguments
+                    print(*args_to_print)
+                    continue
+                # Handle simple cases
+                elif isinstance(line_1, str):
+                    if '"' in line_1:
+                        # Simple string literal print
+                        print(line_1.strip('"'))
+                        continue
+                    elif line_1 in vars:
+                        # Single variable print
+                        value = vars[line_1]
+                        # If the value is a list of one item, extract it
+                        if isinstance(value, list) and len(value) == 1:
+                            value = value[0]
+                        print(value)
+                        continue
+
+            # Standard handling for other stdlib functions
             if isinstance(line_1, list):
                 line_1 = ','.join(line_1)
-            funcArgs = parseArgs(line_1.split(','), func, stdlib, vars)
-
-            if debug:
-                print(f'Using stdlib function {fname} with {funcArgs}')
-
-            stdlib[fname](*funcArgs)
+            try:
+                funcArgs = parseArgs(line_1.split(','), func, stdlib, vars)
+                if debug:
+                    print(f'Using stdlib function {fname} with {funcArgs}')
+                stdlib[fname](*funcArgs)
+            except Exception as e:
+                print(f"Error calling {fname}: {e}")
 
         elif fname in func:
             # Parse func args
@@ -523,7 +642,6 @@ def runFunc(func, name, args):  # sourcery skip: low-code-quality
             raise NameError(f'Function "{fname}" is not defined.')
         else:
             raise UnboundLocalError(f'Unexpected "{fname}" in runtime function name.')
-
 
 stdlib = {}
 def load_stdlib(path: str = 'stdlib'):
@@ -540,7 +658,6 @@ def load_stdlib(path: str = 'stdlib'):
             if not attr.startswith('std'):
                 continue
             stdlib[attr.removeprefix('std_')] = getattr(module, attr)
-
 
 ### RUN THE THING ###
 

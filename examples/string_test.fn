@@ -1,0 +1,9 @@
+// String literals test
+print("Double quoted string")
+print('Single quoted string')
+print("Mixed 'quotes' in a string")
+print('Mixed "quotes" in a string')
+
+let double = "hello"
+let single = 'world'
+print(double, single)
